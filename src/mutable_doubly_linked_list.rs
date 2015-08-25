@@ -59,6 +59,46 @@ impl<T> BoxHelpers<T> for Box<T> {
 }
 
 ////////////////////////////////////////////////////////////
+// Conversions to Option<&>
+
+trait OptionRef<T> {
+    fn to_ref(&self) -> Option<&T>;
+    fn to_mut(&mut self) -> Option<&mut T>;
+}
+
+// Option<Box> -> Option<&>. In fact, can be used instead of as_ref() and as_mut() in most places.
+impl<T, B: Borrow<T> + BorrowMut<T>> OptionRef<T> for Option<B> {
+    fn to_ref(&self) -> Option<&T> {
+        self.as_ref().take().map(|borrowable| {borrowable.borrow()})
+    }
+    fn to_mut(&mut self) -> Option<&mut T> {
+        self.as_mut().take().map(|borrowable| {borrowable.borrow_mut()})
+    }
+}
+
+// Make unsafe pointers behave similar to Option<Box> above. This is unsafe because the output
+// reference isn't unbounded and the caller is responsible for bounding it appropriately.
+trait UnsafeOptionRef<T> {
+    unsafe fn to_ref<'b>(self) -> Option<&'b T>;
+    unsafe fn to_mut<'b>(self) -> Option<&'b mut T>;
+}
+
+impl<T> UnsafeOptionRef<T> for *const T {
+    unsafe fn to_ref<'b>(self) -> Option<&'b T> {
+        match self as usize {
+            0 => None,
+            _ => Some(&*self)
+        }
+    }
+    unsafe fn to_mut<'b>(self) -> Option<&'b mut T> {
+        match self as usize {
+            0 => None,
+            _ => Some(&mut *(self as *mut _))
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
 /// Doubly-linked list
 
 impl<T> List<T> {
@@ -88,10 +128,9 @@ impl<T> List<T> {
             prev: self.tail
         });
         let node_ptr = node_box.to_ptr();
-        if self.tail == ptr::null() {
-            self.head = Some(node_box);
-        } else {
-            unsafe { (*(self.tail as *mut Node<T>)).next = Some(node_box) }
+        match unsafe { self.tail.to_mut() } {
+            None => self.head = Some(node_box),
+            Some(old_tail_ref) => old_tail_ref.next = Some(node_box)
         }
         self.tail = node_ptr;
     }
@@ -101,11 +140,6 @@ impl<T> List<T> {
         self.head.take().map(|node_box| {
             let node = *node_box;
             self.head = node.next;
-            // INCOMPLETE handling of pointer part, causing test_push_pop_crash() to panic
-            //if self.head.is_none() {
-            //    self.tail = ptr::null()
-            //}
-            // CORRECT handling of pointer part!
             match self.head.as_mut() {
                 None => self.tail = ptr::null(),
                 Some(node_box) => node_box.prev = ptr::null()
@@ -115,16 +149,16 @@ impl<T> List<T> {
     }
 
     pub fn pop_back(&mut self) -> Option<T> {
-        if self.tail == ptr::null() {
-            return None;
-        }
-        self.tail = unsafe { (*self.tail).prev };
-        let node_opt = if self.tail == ptr::null() {
-                self.head.take()
-            } else {
-                unsafe { (*(self.tail as *mut Node<T>)).next.take() }
+        // Subtle differences with pop_front() are primarily because the disconnection from the
+        // owner via take() happens later.
+        unsafe { self.tail.to_ref() }.map(|node_ref| {
+            self.tail = node_ref.prev;
+            let node_opt = match unsafe { self.tail.to_mut() } {
+                None => self.head.take(),
+                Some(node_ref) => node_ref.next.take()
             };
-        Some(node_opt.unwrap().elem) // Ideally, should use unwrap_unchecked().
+            node_opt.unwrap().elem // Ideally, should use unwrap_unchecked().
+        })
     }
 
     // PEEK
@@ -133,11 +167,7 @@ impl<T> List<T> {
     }
 
     pub fn peek_back(&self) -> Option<&T> {
-        if self.tail == ptr::null() {
-            None
-        } else {
-            Some(unsafe { &(*self.tail).elem })
-        }
+        unsafe { self.tail.to_ref() }.map(|node| { &node.elem })
     }
 
     // PEEK MUT
@@ -146,20 +176,14 @@ impl<T> List<T> {
     }
 
     pub fn peek_back_mut(&mut self) -> Option<&mut T> {
-        if self.tail == ptr::null() {
-            None
-        } else {
-            Some(unsafe { &mut (*(self.tail as *mut Node<T>)).elem })
-        }
+        unsafe { self.tail.to_mut() }.map(|node| { &mut node.elem })
     }
 
     // ITER
     pub fn iter(&self) -> Iter<T> {
         Iter {
-            front_link: self.head.as_ref().map(|node_box| node_box.borrow()),
-            back_link: if self.tail == ptr::null() { None } else {
-                Some(unsafe { &*self.tail })
-            }
+            front_link: self.head.to_ref(),
+            back_link: unsafe { self.tail.to_ref() }
         }
     }
 }
@@ -181,7 +205,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
                 self.front_link = None;
                 self.back_link = None;
             } else {
-                self.front_link = node_ref.next.as_ref().map(|node_box| node_box.borrow())
+                self.front_link = node_ref.next.to_ref()
             }
             &node_ref.elem
         })
@@ -195,7 +219,7 @@ impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
                 self.front_link = None;
                 self.back_link = None;
             } else {
-                self.back_link = Some(unsafe { &*node_ref.prev })
+                self.back_link = unsafe { node_ref.prev.to_ref() }
             }
             &node_ref.elem
         })
