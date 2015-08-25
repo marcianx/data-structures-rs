@@ -186,6 +186,13 @@ impl<T> List<T> {
             back_link: unsafe { self.tail.to_ref() }
         }
     }
+
+    pub fn iter_mut(&mut self) -> IterMut<T> {
+        IterMut {
+            front_link: self.head.to_mut(),
+            back_link: unsafe { self.tail.to_mut() }
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -227,6 +234,44 @@ impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Mutable by-reference Iter
+
+pub struct IterMut<'a, T: 'a> {
+    front_link: Option<&'a mut Node<T>>,
+    back_link: Option<&'a mut Node<T>>,
+}
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.front_link.take().map(|node_ref| {
+            if eq_mut_ref_opt(node_ref, &self.back_link) { // If both ends collide, be DONE!
+                self.front_link = None;
+                self.back_link = None;
+            } else {
+                self.front_link = node_ref.next.to_mut()
+            }
+            &mut node_ref.elem
+        })
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for IterMut<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.back_link.take().map(|node_ref| {
+            if eq_mut_ref_opt(node_ref, &self.front_link) { // If both ends collide, be DONE!
+                self.front_link = None;
+                self.back_link = None;
+            } else {
+                self.back_link = unsafe { node_ref.prev.to_mut() }
+            }
+            &mut node_ref.elem
+        })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // IntoIterator
 
 pub struct ListIntoIterator<T> {
@@ -262,6 +307,15 @@ impl<'a, T> IntoIterator for &'a List<T> {
 
     fn into_iter(self) -> Iter<'a, T> {
         self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut List<T> {
+    type Item = &'a mut T;
+    type IntoIter = IterMut<'a, T>;
+
+    fn into_iter(self) -> IterMut<'a, T> {
+        self.iter_mut()
     }
 }
 
@@ -390,6 +444,31 @@ mod test {
         for val in &list {
             assert_eq!(i, *val);
             i += 1;
+        }
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut list = List::new();
+        list.push_front(1);
+        list.push_front(2);
+        list.push_front(3);
+        let mut i = 3;
+        for val in list.iter_mut() {
+            assert_eq!(i, *val);
+            *val = 3 - i;
+            i -= 1;
+        }
+        let mut i = 0;
+        for val in &mut list {
+            assert_eq!(i, *val);
+            *val = 3 - i;
+            i += 1;
+        }
+        let mut i = 3;
+        for val in &list {
+            assert_eq!(i, *val);
+            i -= 1;
         }
     }
 }
