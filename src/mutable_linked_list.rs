@@ -15,16 +15,16 @@ struct Node<T> {
 }
 
 impl<T> List<T> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         List { head: None }
     }
 
     // TODO: Figure out how to return self.
-    fn push(&mut self, elem: T) {
+    pub fn push(&mut self, elem: T) {
         self.head = Some(Box::new(Node { elem: elem, next: self.head.take() }));
     }
 
-    fn pop(&mut self) -> Option<T> {
+    pub fn pop(&mut self) -> Option<T> {
         // Option<Box<Node<T>>>
         self.head.take().map(|node| { // Box<Node<T>>
             let node = *node;
@@ -33,19 +33,19 @@ impl<T> List<T> {
         })
     }
 
-    fn peek(&self) -> Option<&T> {
+    pub fn peek(&self) -> Option<&T> {
         self.head.as_ref().map(|node| { &node.elem })
     }
 
-    fn peek_mut(&mut self) -> Option<&mut T> {
+    pub fn peek_mut(&mut self) -> Option<&mut T> {
         self.head.as_mut().map(|node| { &mut node.elem })
     }
 
-    fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<T> {
         Iter { link: &self.head }
     }
 
-    fn iter_mut(&mut self) -> IterMut<T> {
+    pub fn iter_mut(&mut self) -> IterMut<T> {
         IterMut { next: Some(&mut self.head) }
     }
 }

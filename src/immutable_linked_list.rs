@@ -16,25 +16,25 @@ struct Node<T> {
 }
 
 impl<T> List<T> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         List { head: None }
     }
 
-    fn prepend(&self, elem: T) -> List<T> {
+    pub fn prepend(&self, elem: T) -> List<T> {
         List { head: Some(Rc::new(Node { elem: elem, next: self.head.clone() })) }
     }
 
-    fn cons(elem: T, list: List<T>) -> List<T> { cons(elem, list) }
+    pub fn cons(elem: T, list: List<T>) -> List<T> { cons(elem, list) }
 
-    fn tail(&self) -> List<T> {
+    pub fn tail(&self) -> List<T> {
         List { head: self.head.as_ref().and_then(|node_ref| node_ref.next.clone()) }
     }
 
-    fn head(&self) -> Option<&T> {
+    pub fn head(&self) -> Option<&T> {
         self.head.as_ref().map(|node_ref| &node_ref.elem)
     }
 
-    fn iter(&self) -> Iter<T> {
+    pub fn iter(&self) -> Iter<T> {
         Iter { link: &self.head }
     }
 }
